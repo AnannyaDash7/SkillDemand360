@@ -2,7 +2,7 @@
 
 ```mermaid 
 flowchart TD
-    A["Job posting CSV<br/><sub>55,350 raw <br> rows</sub>"] --> B["Databricks<br/><sub>PySpark + Delta <br>Lake</sub>"]
+    A["Job posting CSV<br/><sub>55,350 raw <br> rows</sub>"] --> B["Databricks<br/><sub>PySpark +<br> Delta Lake</sub>"]
     B --> C["Bronze layer<br/><sub>Raw Delta <br>data</sub>"]
     C --> D["Silver layer<br/><sub>Cleaning & <br>validation</sub>"]
     D --> E["Gold layer<br/><sub>Skill-month, QoQ growth,<br> skill pairs</sub>"]
