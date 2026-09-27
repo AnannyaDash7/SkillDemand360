@@ -1,0 +1,352 @@
+create warehouse if not exists my_wh warehouse_size='XSMALL',Auto_suspend=60,Auto_resume=TRUE;
+use warehouse my_wh;
+create database if not exists job_skill;
+
+CREATE SCHEMA IF NOT EXISTS JOB_SKILL.GOLD;
+SHOW DATABASES LIKE 'JOB_SKILL';
+
+
+SHOW SCHEMAS IN DATABASE JOB_SKILL;
+
+CREATE OR REPLACE TABLE SKILL_MONTH (
+   
+    MONTH VARCHAR,
+    SKILL VARCHAR,
+    POSTING_COUNT INTEGER,
+    POSTINGS_THAT_MONTH INTEGER,
+    SKILL_SHARE FLOAT
+);
+
+
+CREATE OR REPLACE TABLE SKILL_MONTH_TOP10 (
+    SKILL VARCHAR,
+    MONTH VARCHAR,
+    POSTING_COUNT INTEGER,
+    POSTINGS_THAT_MONTH INTEGER,
+    SKILL_SHARE FLOAT,
+    RANK INTEGER
+);
+
+CREATE OR REPLACE TABLE JOB_SKILL.GOLD.SKILL_QUARTER_GROWTH (
+    QUARTER VARCHAR,
+    SKILL VARCHAR,
+    QUARTER_POSTINGS INTEGER,
+    QUARTER_TOTAL_POSTINGS INTEGER,
+    QUARTER_SHARE FLOAT,
+    PREVIOUS_QUARTER_SHARE FLOAT,
+    QOQ_CHANGE FLOAT
+);
+
+CREATE OR REPLACE TABLE SKILL_PAIRS (
+    SKILL_A VARCHAR,
+    SKILL_B VARCHAR,
+    MONTH VARCHAR,
+    PAIR_POSTINGS INTEGER,
+    CONFIDENCE_A_TO_B FLOAT
+);
+
+SHOW TABLES IN SCHEMA JOB_SKILL.GOLD;
+USE DATABASE JOB_SKILL;
+USE SCHEMA GOLD;
+
+
+COPY INTO SKILL_MONTH
+FROM @JOB_STAGE/skill_month.csv
+FILE_FORMAT = (
+    TYPE = CSV
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+COPY INTO SKILL_MONTH_TOP10
+FROM @JOB_STAGE/skill_month_top10.csv
+FILE_FORMAT = (
+    TYPE = CSV
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+
+COPY INTO SKILL_QUARTER_GROWTH
+FROM @JOB_STAGE/skill_quarter_growth.csv
+FILE_FORMAT = (
+    TYPE = CSV
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+COPY INTO SKILL_PAIRS
+FROM @JOB_STAGE/skill_pairs.csv
+FILE_FORMAT = (
+    TYPE = CSV
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+
+SELECT 'SKILL_MONTH' AS TABLE_NAME, COUNT(*) AS ROWS_
+FROM JOB_SKILL.GOLD.SKILL_MONTH
+
+UNION ALL
+
+SELECT 'SKILL_MONTH_TOP10', COUNT(*)
+FROM JOB_SKILL.GOLD.SKILL_MONTH_TOP10
+
+UNION ALL
+
+SELECT 'SKILL_QUARTER_GROWTH', COUNT(*)
+FROM JOB_SKILL.GOLD.SKILL_QUARTER_GROWTH
+
+UNION ALL
+
+SELECT 'SKILL_PAIRS', COUNT(*)
+FROM JOB_SKILL.GOLD.SKILL_PAIRS;
+
+
+
+---1.Top 10 skills by posting count, per month
+SELECT
+    MONTH,
+    SKILL,
+    POSTING_COUNT,
+    POSTINGS_THAT_MONTH,
+    SKILL_SHARE,
+    RANK
+FROM JOB_SKILL.GOLD.SKILL_MONTH_TOP10
+ORDER BY MONTH, RANK;
+
+
+--2. Which skills are growing fastest quarter on quarter?
+SELECT
+    QUARTER,
+    SKILL,
+    QUARTER_SHARE,
+    PREVIOUS_QUARTER_SHARE,
+    QOQ_CHANGE
+FROM JOB_SKILL.GOLD.SKILL_QUARTER_GROWTH
+WHERE PREVIOUS_QUARTER_SHARE IS NOT NULL
+ORDER BY QOQ_CHANGE DESC;
+
+
+--3. Which skills appear together?
+
+USE DATABASE JOB_SKILL;
+USE SCHEMA GOLD;
+
+CREATE OR REPLACE TABLE SILVER_POSTING_SKILL (
+    POSTING_ID VARCHAR,
+    COMPANY_ID VARCHAR,
+    POSTED_DATE VARCHAR,
+    SKILL_RAW VARCHAR,
+    SKILL VARCHAR
+);
+
+COPY INTO SILVER_POSTING_SKILL
+FROM @JOB_STAGE/silver_posting_skill.csv
+FILE_FORMAT = (
+    TYPE = CSV
+    SKIP_HEADER = 1
+    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+)
+ON_ERROR = 'ABORT_STATEMENT';
+
+WITH s AS (
+    SELECT DISTINCT
+        POSTING_ID,
+        SKILL
+    FROM JOB_SKILL.GOLD.SILVER_POSTING_SKILL
+),
+
+a AS (
+    SELECT
+        POSTING_ID,
+        SKILL AS SKILL_A,
+        COUNT(*) OVER (PARTITION BY SKILL) AS SKILL_POSTINGS
+    FROM s
+),
+
+b AS (
+    SELECT
+        POSTING_ID,
+        SKILL AS SKILL_B
+    FROM s
+)
+
+SELECT
+    a.SKILL_A,
+    b.SKILL_B,
+    COUNT(*) AS PAIR_POSTINGS,
+    ROUND(
+        COUNT(*) / NULLIF(MAX(a.SKILL_POSTINGS), 0),
+        3
+    ) AS CONFIDENCE_A_TO_B
+FROM a
+JOIN b
+    ON a.POSTING_ID = b.POSTING_ID
+   AND a.SKILL_A <> b.SKILL_B
+GROUP BY
+    a.SKILL_A,
+    b.SKILL_B
+ORDER BY
+    a.SKILL_A,
+    CONFIDENCE_A_TO_B DESC;
+
+
+WITH s AS (
+    SELECT DISTINCT
+        POSTING_ID,
+        SKILL
+    FROM JOB_SKILL.GOLD.SILVER_POSTING_SKILL
+),
+
+a AS (
+    SELECT
+        POSTING_ID,
+        SKILL AS SKILL_A,
+        COUNT(*) OVER (PARTITION BY SKILL) AS SKILL_POSTINGS
+    FROM s
+),
+
+b AS (
+    SELECT
+        POSTING_ID,
+        SKILL AS SKILL_B
+    FROM s
+)
+
+SELECT
+    a.SKILL_A,
+    b.SKILL_B,
+    COUNT(*) AS PAIR_POSTINGS,
+    ROUND(
+        COUNT(*) / NULLIF(MAX(a.SKILL_POSTINGS), 0),
+        3
+    ) AS CONFIDENCE_A_TO_B
+FROM a
+JOIN b
+    ON a.POSTING_ID = b.POSTING_ID
+   AND a.SKILL_A <> b.SKILL_B
+WHERE a.SKILL_A = 'snowflake'
+GROUP BY
+    a.SKILL_A,
+    b.SKILL_B
+ORDER BY
+    CONFIDENCE_A_TO_B DESC;
+
+------------------------------------------------------------------------
+
+--ADDITIONAL QUERIES SOLVED:
+--Q1 Top skills overall
+
+SELECT
+    skill,
+    SUM(posting_count) AS total_postings
+FROM JOB_SKILL.GOLD.SKILL_MONTH
+GROUP BY skill
+ORDER BY total_postings DESC;
+
+--Q2 Skill demand by month
+
+SELECT
+    month,
+    skill,
+    posting_count,
+    postings_that_month,
+    skill_share
+FROM JOB_SKILL.GOLD.SKILL_MONTH
+ORDER BY month, posting_count DESC;
+
+--Q3. Snowflake's monthly growth
+
+SELECT
+    MONTH,
+    POSTING_COUNT,
+    POSTINGS_THAT_MONTH,
+    SKILL_SHARE
+FROM JOB_SKILL.GOLD.SKILL_MONTH
+WHERE LOWER(SKILL) = 'snowflake'
+ORDER BY MONTH;
+
+
+
+--Q4 Top 10 skills for each month
+SELECT
+    month,
+    skill,
+    posting_count,
+    skill_share,
+    rank
+FROM JOB_SKILL.GOLD.SKILL_MONTH_TOP10
+ORDER BY month, rank;
+
+--Q5 Fastest quarter-over-quarter growth
+
+SELECT
+    skill,
+    quarter,
+    quarter_share,
+    previous_quarter_share,
+    qoq_change
+FROM JOB_SKILL.GOLD.SKILL_QUARTER_GROWTH
+WHERE previous_quarter_share IS NOT NULL
+ORDER BY qoq_change DESC
+LIMIT 10;
+
+--Q6 Snowflake's top companions
+SELECT
+    SKILL_B AS COMPANION_SKILL,
+    SUM(PAIR_POSTINGS) AS TOTAL_PAIR_POSTINGS
+FROM JOB_SKILL.GOLD.SKILL_PAIRS
+WHERE LOWER(SKILL_A) = 'snowflake'
+GROUP BY SKILL_B
+ORDER BY TOTAL_PAIR_POSTINGS DESC;
+
+--Q7 Find the skills whose demand increased the most from the first month to the last month:
+WITH first_month AS (
+    SELECT
+        skill,
+        skill_share AS first_share
+    FROM JOB_SKILL.GOLD.SKILL_MONTH
+    WHERE month = (
+        SELECT MIN(month)
+        FROM JOB_SKILL.GOLD.SKILL_MONTH
+    )
+),
+
+last_month AS (
+    SELECT
+        skill,
+        skill_share AS last_share
+    FROM JOB_SKILL.GOLD.SKILL_MONTH
+    WHERE month = (
+        SELECT MAX(month)
+        FROM JOB_SKILL.GOLD.SKILL_MONTH
+    )
+)
+
+SELECT
+    f.skill,
+    f.first_share,
+    l.last_share,
+    ROUND(l.last_share - f.first_share, 4) AS share_change
+FROM first_month f
+JOIN last_month l
+    ON f.skill = l.skill
+ORDER BY share_change DESC;
+
+--Q8  8. Create a Snowflake analytical view
+CREATE OR REPLACE VIEW JOB_SKILL.GOLD.V_SKILL_DEMAND AS
+SELECT
+    skill,
+    month,
+    posting_count,
+    postings_that_month,
+    skill_share
+FROM JOB_SKILL.GOLD.SKILL_MONTH;
+
+SELECT *
+FROM JOB_SKILL.GOLD.V_SKILL_DEMAND;
