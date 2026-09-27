@@ -5,8 +5,8 @@ flowchart TD
     A["Job posting CSV<br/><sub>55,350 raw <br> rows</sub>"] --> B["Databricks<br/><sub>PySpark +<br> Delta Lake</sub>"]
     B --> C["Bronze layer<br/><sub>Raw Delta <br>data</sub>"]
     C --> D["Silver layer<br/><sub>Cleaning & <br>validation</sub>"]
-    D --> E["Gold layer<br/><sub>Skill-month, QoQ growth,<br> skill pairs</sub>"]
-    E --> F["Snowflake<br/><sub>JOB_SKILL / GOLD schema, SQL analytics</sub>"]
+    D --> E["Gold layer<br/><sub>Skill-month, QoQ <br> growth, skill pairs</sub>"]
+    E --> F["Snowflake<br/><sub>JOB_SKILL / GOLD schema, SQL <br> analytics</sub>"]
     E --> G["Business analytics<br/><sub>Top 10 skills, fastest QoQ <br>growth</sub>"]
 
     classDef source fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A;
